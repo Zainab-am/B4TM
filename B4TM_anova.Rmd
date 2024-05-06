@@ -1,0 +1,59 @@
+---
+title: "Feature-selection"
+author: "Qiang Zhao"
+date: "2024-04-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(dplyr)
+library(tidyr)
+library(stats)
+
+data = read.csv('/Users/crystal_zhao/Desktop/B4TM/data/Train_call.txt',sep = "\t",header = TRUE)
+meta = read.csv('/Users/crystal_zhao/Desktop/B4TM/data/Train_clinical.txt',sep = "\t",header = TRUE)
+
+data_long <- pivot_longer(data, cols = starts_with("Array"), names_to = "Sample", values_to = "Value")
+merged_data <- merge(data_long, meta, by = "Sample")
+data_long <- pivot_longer(data, cols = starts_with("Array"), names_to = "Sample", values_to = "Value")
+merged_data <- merge(data_long, meta, by = "Sample")
+merged_data$FeatureIndex <- paste0(merged_data$Chromosome,":", merged_data$Start,"-" ,merged_data$End)
+
+results <- list()
+pvalue_df <- data.frame(matrix(NA, nrow = dim(data)[1], ncol = 3))
+n_coor <- unique(merged_data$FeatureIndex)
+
+for(i in 1:length(n_coor) ) {
+  feature = n_coor[i]
+  feature_data <- merged_data[merged_data$FeatureIndex == feature, ]
+  fit <- aov(Value ~ Subgroup, data = feature_data)
+  tukey_results <- TukeyHSD(fit)
+  
+  results[[feature]] <- list(ANOVA = summary(fit), TukeyHSD = tukey_results)
+  pvalue_df[i,] = tukey_results$Subgroup[,4]
+}
+
+colnames(pvalue_df) <-  names(tukey_results$Subgroup[,4])
+rownames(pvalue_df) <- n_coor
+
+target <- c()
+for (i in 1:3){
+  target <- c(target,rownames(pvalue_df[pvalue_df[,3] < 0.01,]))
+}
+print(paste0("The overlapping features (pvalue<0.01) is: ",length(unique(target))))
+
+subset_features <-t(sapply(target, function(x) unlist(strsplit(x,"[:-]"))))
+
+filtered_data <- data[data$Chromosome %in% subset_features[,1] & data$Start %in% subset_features[,2] & data$End %in% subset_features[,3], ]
+
+write.table(filtered_data,'/Users/crystal_zhao/Desktop/B4TM/data/Train_call_anovaselected.txt',sep="\t",row.names = FALSE)
